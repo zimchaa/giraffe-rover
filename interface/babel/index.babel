@@ -1,0 +1,464 @@
+const CLICKED_ITEMS = [
+  {
+    component: "",
+    feature: ""
+  },
+  {
+    component: "",
+    action: ""
+  }
+];
+
+const LINKS = [
+  {
+    colorIndex: "graph-2",
+    ids: ["light-switch", "light-off"],
+    component: "light",
+    feature: "switch"
+  },
+  {
+    colorIndex: "graph-2",
+    ids: ["arm-grip", "arm-stop"],
+    component: "arm",
+    feature: "grip"
+  },
+  {
+    colorIndex: "graph-2",
+    ids: ["arm-wrist", "arm-stop"],
+    component: "arm",
+    feature: "wrist"
+  },
+  {
+    colorIndex: "graph-2",
+    ids: ["arm-elbow", "arm-stop"],
+    component: "arm",
+    feature: "elbow"
+  },
+  {
+    colorIndex: "graph-2",
+    ids: ["tracks-both", "tracks-stop"],
+    component: "tracks",
+    feature: "both"
+  }
+];
+
+const ROBOARM = {
+  description: "Giraffe Rover",
+  identification: {
+    description:
+      "These are the parameters used to identify the RoboArm using the USB connection",
+    idVendor: 0x1267,
+    idProduct: 0x000
+  },
+  initialisation: {
+    description:
+      "These variables are used to transfer data on the created USB connection",
+    bmRequestType: 0x40,
+    bmRequest: 6,
+    wValue: 0x100,
+    wIndex: 0
+  },
+  components: {
+    tracks: {
+      description:
+        "The <ARM> components are mounted on this rotating base, with approx. 270deg freedom, clockwise and counterclockwise rotation is considered from the top of the RoboArm",
+      mask: 0b11111111,
+      features: {
+        both: {
+          mask: 0b00000011,
+          actions: {
+            forward: 0b00000001,
+            stop: 0b00000010,
+            reverse: 0b00000000,
+            turncw: 0b0,
+            turnccw: 0b0
+          }
+        }
+      }
+    },
+    arm: {
+      description:
+        "This component is mounted on the <TRACKS>, and replicates a typical human arm - with features, i.e. shoulder (unplugged), elbow, wrist and a gripper.",
+      mask: 0b11111111,
+      features: {
+        all: {
+          description:
+            "This is a pseudo-feature that allows for complex functions to be predescribed for the whole <ARM> component",
+          mask: 0b11111111,
+          type: "virtual",
+          actions: {
+            open: 0b10101010,
+            close: 0b01010101,
+            stop: 0b00000000
+          }
+        },
+        elbow: {
+          description: "",
+          mask: 0b00110000,
+          actions: {
+            open: 0b00010000,
+            close: 0b00100000,
+            stop: 0b00000000
+          }
+        },
+        wrist: {
+          description: "",
+          mask: 0b00001100,
+          actions: {
+            open: 0b00000100,
+            close: 0b00001000,
+            lift: 0b00000100,
+            stop: 0b00000000
+          }
+        },
+        grip: {
+          description: "",
+          mask: 0b00000011,
+          actions: {
+            open: 0b00000001,
+            close: 0b00000010,
+            grab: 0b00000010,
+            drop: 0b00000001,
+            stop: 0b00000000,
+            pause: 0b00000000
+          }
+        }
+      }
+    },
+    light: {
+      description:
+        "This is an LED mounted behind the <GRIP> feature on the <ARM> component - the focus of the light is useful to highlight where to grab, or that the system is in use",
+      mask: 0b11111111,
+      features: {
+        switch: {
+          description:
+            "The only feature of the <LIGHT> is the <SWITCH>, simply flipping the last bit of the 3rd byte",
+          mask: 0b00000001,
+          actions: {
+            on: 0b00000001,
+            off: 0b00000000
+          }
+        }
+      }
+    }
+  }
+};
+
+class RoboArmComponents extends React.Component {
+  render() {
+    const componentKeys = Object.keys(this.props.componentConfig);
+    const componentParts = componentKeys.map(componentName => (
+      <Topology.Part
+        a11yTitle={componentName}
+        className="component"
+        key={componentName}
+        direction="row"
+      >
+        <RoboArmComponentFeatures
+          featureConfig={this.props.componentConfig[componentName].features}
+          componentName={componentName}
+          onClick={this.props.onClick}
+        />
+        <Topology.Label className="raa_component_label">
+          {componentName.toUpperCase()}
+        </Topology.Label>
+        <RoboArmControlFeatures
+          featureConfig={this.props.componentConfig[componentName].features}
+          controlName={componentName}
+          onClick={this.props.onClick}
+        />
+      </Topology.Part>
+    ));
+    return (
+      <Topology.Part
+        a11yTitle="RoboArm Component Structure"
+        className="RoboArmComponents"
+        direction="column"
+        label={this.props.roboArmName}
+      >
+        <Topology.Part
+          a11yTitle="RoboArm Component Structure"
+          className="RoboArmComponents"
+          direction="column"
+          reverse={true}
+          className="raa_structure"
+        >
+          {componentParts}
+        </Topology.Part>
+      </Topology.Part>
+    );
+  }
+}
+
+class RoboArmComponentFeatures extends React.Component {
+  render() {
+    // const featureRemove = "all";
+    const componentName = this.props.componentName;
+    const featureKeys = Object.keys(this.props.featureConfig);
+    /* let displayFeatureKeys = featureKeys.filter(
+      feature => feature.indexOf(featureRemove) < 0
+    ); */
+    const featureParts = featureKeys.map(featureName => (
+      <Topology.Part
+        id={componentName + "-" + featureName}
+        status="ok"
+        label={featureName}
+        direction="row"
+        demarcate={false}
+        justify="start"
+        align="center"
+        key={featureName}
+        onClick={this.props.onClick}
+        className="raa_feature"
+        reverse={true}
+        name="componentfeature"
+      />
+    ));
+    return (
+      <Topology.Parts direction="column" uniform={true}>
+        {featureParts}
+      </Topology.Parts>
+    );
+  }
+}
+
+class RoboArmControlFeatures extends React.Component {
+  render() {
+    const featureDisplay = "all";
+    const featureKeys = Object.keys(this.props.featureConfig);
+    // console.log(featureKeys.length == 1);
+    let displayFeatureKeys = [];
+    if (featureKeys.length == 1) {
+      displayFeatureKeys = featureKeys;
+    } else {
+      displayFeatureKeys = featureKeys.filter(
+        feature => feature.indexOf(featureDisplay) > -1
+      );
+    }
+    // console.log(displayFeatureKeys);
+    const featureParts = displayFeatureKeys.map(featureName => (
+      <Topology.Part
+        id={featureName}
+        direction="column"
+        demarcate={false}
+        justify="start"
+        align="start"
+        key={featureName}
+      >
+        <RoboArmControlFeatureActions
+          actionConfig={this.props.featureConfig[featureName].actions}
+          featureName={featureName}
+          controlName={this.props.controlName}
+          onClick={this.props.onClick}
+        />
+      </Topology.Part>
+    ));
+    return (
+      <Topology.Parts direction="column" uniform={true}>
+        {featureParts}
+      </Topology.Parts>
+    );
+  }
+}
+
+class RoboArmControlFeatureActions extends React.Component {
+  render() {
+    const featureName = this.props.featureName;
+    const controlName = this.props.controlName;
+    const actionKeys = Object.keys(this.props.actionConfig);
+    const actionParts = actionKeys.map(actionName => (
+      <Topology.Part
+        id={controlName + "-" + actionName}
+        status="ok"
+        label={actionName}
+        direction="row"
+        demarcate={false}
+        justify="start"
+        align="center"
+        key={featureName + "-" + actionName}
+        onClick={this.props.onClick}
+        className="raa_action"
+        name="componentaction"
+      />
+    ));
+    return (
+      <Topology.Parts direction="column" uniform={true}>
+        {actionParts}
+      </Topology.Parts>
+    );
+  }
+}
+
+class RoboArmApp extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      move_command: { arm: 0b00000000, base: 0b00000000, light: 0b00000000 },
+      clicked_items: CLICKED_ITEMS,
+      command_links: LINKS
+    };
+  }
+
+  update_links(component, feature, action) {
+    let updated_link = false;
+    let curr_links = this.state.command_links;
+
+    for (let i = 0; i < curr_links.length; i++) {
+      // console.log("checking: " + i);
+      // console.log("component: " + links[i].component);
+      // console.log("feature: " + links[i].feature);
+      if (
+        curr_links[i].component == component &&
+        curr_links[i].feature == feature
+      ) {
+        curr_links[i].ids = [
+          component + "-" + feature,
+          component + "-" + action
+        ];
+        updated_link = true;
+        // console.log("updating: " + i);
+      }
+    }
+    if (!updated_link) {
+      curr_links.push({
+        colorIndex: "graph-3",
+        ids: [component + "-" + feature, component + "-" + action],
+        component: component,
+        feature: feature
+      });
+    }
+
+    this.setState({
+      command_links: curr_links
+    });
+
+    this.invoke_api(component, feature, action);
+  }
+
+  invoke_api(component, feature, action) {
+    const api_url =
+      window.location.protocol +
+      "//" +
+      window.location.hostname +
+      ":" +
+      window.location.port;
+    const api_path = "roboarm/" + component + "/" + feature + "/" + action;
+
+    console.log(api_url + api_path);
+
+    let raa = this;
+
+    fetch("http://echo.jsontest.com/base/0/arm/0/light/1")
+      .then(resp => resp.json())
+      .then(function(data) {
+        raa.update_move_command(data);
+      })
+      .catch(function(error) {
+        console.log("ERROR: " + error);
+      });
+  }
+
+  update_move_command(move_command_response) {
+    this.setState({
+      move_command: move_command_response
+    });
+  }
+
+  handle_mode_switch = event => {
+    console.log(event.target.value);
+  };
+
+  command_click = event => {
+    let clicked_componentfeature, clicked_componentaction, cl_parts, cl_links;
+
+    cl_parts = this.state.clicked_items;
+
+    if (event.target.parentElement.getAttribute("name") == "componentfeature") {
+      clicked_componentfeature = event.target.parentNode.id.split("-");
+      cl_parts[0].component = clicked_componentfeature[0];
+      cl_parts[0].feature = clicked_componentfeature[1];
+      // console.log("clicked a feature: " + cl_parts[0].feature);
+    } else {
+      clicked_componentaction = event.target.parentNode.id.split("-");
+      cl_parts[1].component = clicked_componentaction[0];
+      cl_parts[1].action = clicked_componentaction[1];
+      // console.log("clicked a action: " + cl_parts[1].action);
+    }
+
+    /* hacky bit of hardcoding to make the interface a bit nicer */
+    if (cl_parts[1].component == "light") {
+      cl_parts[0].component = "light";
+      cl_parts[0].feature = "switch";
+    }
+
+    if (cl_parts[1].component == "base") {
+      cl_parts[0].component = "base";
+      cl_parts[0].feature = "orientation";
+    }
+
+    if (
+      cl_parts[0].component == cl_parts[1].component &&
+      cl_parts[0].component != ""
+    ) {
+      this.update_links(
+        cl_parts[0].component,
+        cl_parts[0].feature,
+        cl_parts[1].action
+      );
+
+      cl_parts[1].component = "";
+    }
+
+    this.setState({
+      clicked_items: cl_parts
+    });
+  };
+
+  render() {
+    return (
+      <App>
+        <Box
+          align="center"
+          pad="medium"
+          colorIndex="neutral-1"
+          margin="medium"
+          pad="small"
+          direction="column"
+        >
+          <Box margin="medium">
+            <CheckBox
+              label="Live Mode"
+              id="mode_switch"
+              name="mode_switch"
+              defaultChecked={true}
+              onChange={this.handle_mode_switch}
+              disabled={true}
+            />
+          </Box>
+          <Box margin="medium">
+            <img src="http://roboarm.local:8081" alt="Live Feed" />
+          </Box>
+          <Box margin="medium">
+            <Topology
+              a11yTitle={this.props.roboarmConfig.description}
+              links={this.state.command_links}
+            >
+              <Topology.Parts direction="column" uniform={true}>
+                <Topology.Part direction="column">
+                  <RoboArmComponents
+                    componentConfig={this.props.roboarmConfig.components}
+                    roboArmName={this.props.roboarmConfig.description}
+                    onClick={this.command_click}
+                  />
+                </Topology.Part>
+              </Topology.Parts>
+            </Topology>
+          </Box>
+        </Box>
+      </App>
+    );
+  }
+}
+
+var element = document.getElementById("content");
+ReactDOM.render(<RoboArmApp roboarmConfig={ROBOARM} />, element);
