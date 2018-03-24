@@ -156,6 +156,7 @@ ROVER = {
   }
 }
 
+# initialise the global vars
 move_command = [0, 0, 0]
 
 def change_move_command(update_move_command, roboarm_components_system, component, feature, verb):
@@ -188,16 +189,37 @@ def check_inputs(roboarm_components_system, component, feature, verb):
   # return the complete list of the 
   return (component_exists & feature_exists & verb_exists), component_exists, feature_exists, verb_exists
 
-def initialise_roboarm(vendor_id=OWI535USB["identification"]["idVendor"], product_id=OWI535USB["identification"]["idProduct"]):
-  return usb.core.find(idVendor=vendor_id, idProduct=product_id)
+def initialise_robocontroller(vendor_id=OWI535USB["identification"]["idVendor"], product_id=OWI535USB["identification"]["idProduct"]):
+
+  try:
+    robocontroller = usb.core.find(idVendor=vendor_id, idProduct=product_id)
+    print("INFO: initialised device: vendor_id={}, product_id={}".format(vendor_id, product_id))
+    print("INFO: device: robocontroller={}".format(robocontroller))
+    return robocontroller
+  except Exception as e:
+    print("ERROR: unable to find device: vendor_id={}, product_id={}".format(vendor_id, product_id))
+    print("ERROR: exception={}".format(e))
+    return None
+
+
+initial_robocontroller_device = initialise_robocontroller()
   
-def transfer_roboarm(move_command, ctrl_roboarm=OWI535USB["initialisation"], timeout=1000):
-  # attempt to initialise the device 
-  roboarm_device = initialise_roboarm()
+def transfer_robocontroller(move_command, ctrl_roboarm=OWI535USB["initialisation"], timeout=1000, robocontroller_device=initial_robocontroller_device):
+  transfer_stats = None
+
+  if robocontroller_device is None:
+      # attempt to initialise the device 
+    print("WARN: Reinitialising robocontroller")
+    robocontroller_device = initialise_robocontroller()
+  else:
   
   # perform the actual USB transfer, returning the length of the transfer
-  transfer_stats = roboarm_device.ctrl_transfer(ctrl_roboarm["bmRequestType"], ctrl_roboarm["bmRequest"], ctrl_roboarm["wValue"], ctrl_roboarm["wIndex"], move_command, timeout)
-  
+    try: 
+      transfer_stats = robocontroller_device.ctrl_transfer(ctrl_roboarm["bmRequestType"], ctrl_roboarm["bmRequest"], ctrl_roboarm["wValue"], ctrl_roboarm["wIndex"], move_command, timeout)
+    except Exception as e:
+      print("ERROR: unable to update device with ctrl: move_command={}".format(move_command))
+      print("ERROR: exception={}".format(e))
+      
   return transfer_stats
 
 app = Bottle()
@@ -218,7 +240,7 @@ def move_roboarm(component, feature, verb, move_command=move_command):
   print("new move_command:{}".format(move_command))
   
   # make the transfer
-  transfer_attempt = transfer_roboarm(move_command)
+  transfer_attempt = transfer_robocontroller(move_command)
   
   # print out the result
   print("transfer_attempt:{}".format(transfer_attempt))
@@ -231,5 +253,3 @@ def server_static(filepath):
     return static_file(filepath, root='/home/pi/rover/roboarm/interface')
 
 run(app, host='0.0.0.0', port=8888)
-
-
