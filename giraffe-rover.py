@@ -253,3 +253,8 @@ def server_static(filepath):
     return static_file(filepath, root='/home/pi/rover/roboarm/interface')
 
 run(app, host='0.0.0.0', port=8888)
+
+
+
+
+
