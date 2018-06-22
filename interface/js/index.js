@@ -165,7 +165,7 @@ var RoboArmComponents = function (_React$Component) {
           React.createElement(RoboArmComponentFeatures, {
             featureConfig: _this2.props.componentConfig[componentName].features,
             componentName: componentName,
-            onClick: _this2.props.onClick
+            onClickItem: _this2.props.onClickItem
           }),
           React.createElement(
             Topology.Label,
@@ -175,7 +175,7 @@ var RoboArmComponents = function (_React$Component) {
           React.createElement(RoboArmControlFeatures, {
             featureConfig: _this2.props.componentConfig[componentName].features,
             controlName: componentName,
-            onClick: _this2.props.onClick
+            onClickItem: _this2.props.onClickItem
           })
         );
       });
@@ -234,10 +234,11 @@ var RoboArmComponentFeatures = function (_React$Component2) {
           justify: "start",
           align: "center",
           key: featureName,
-          onClick: _this4.props.onClick,
           className: "raa_feature",
           reverse: true,
-          name: "componentfeature"
+          onClick: _this4.props.onClickItem,
+          "data-id": componentName + "-" + featureName,
+          "data-type": "componentFeature"
         });
       });
       return React.createElement(
@@ -292,7 +293,7 @@ var RoboArmControlFeatures = function (_React$Component3) {
             actionConfig: _this6.props.featureConfig[featureName].actions,
             featureName: featureName,
             controlName: _this6.props.controlName,
-            onClick: _this6.props.onClick
+            onClickItem: _this6.props.onClickItem
           })
         );
       });
@@ -334,9 +335,10 @@ var RoboArmControlFeatureActions = function (_React$Component4) {
           justify: "start",
           align: "center",
           key: featureName + "-" + actionName,
-          onClick: _this8.props.onClick,
           className: "raa_action",
-          name: "componentaction"
+          onClick: _this8.props.onClickItem,
+          "data-id": controlName + "-" + actionName,
+          "data-type": "componentAction"
         });
       });
       return React.createElement(
@@ -370,33 +372,28 @@ var RoboArmApp = function (_React$Component5) {
 
       cl_parts = _this9.state.clicked_items;
 
-      if (event.target.parentElement.getAttribute("name") == "componentfeature") {
-        clicked_componentfeature = event.target.parentNode.id.split("-");
+      console.log("INFO: clicked element target data-type: " + event.currentTarget.dataset.type);
+      console.log("INFO: clicked element target data-id: " + event.currentTarget.dataset.id);
+
+      if (event.currentTarget.dataset.type == "componentFeature") {
+        clicked_componentfeature = event.currentTarget.dataset.id.split("-");
         cl_parts[0].component = clicked_componentfeature[0];
         cl_parts[0].feature = clicked_componentfeature[1];
-        // console.log("clicked a feature: " + cl_parts[0].feature);
-      } else {
-        clicked_componentaction = event.target.parentNode.id.split("-");
+        console.log("INFO: clicked a feature: " + cl_parts[0].feature);
+      } else if (event.currentTarget.dataset.type == "componentAction") {
+        clicked_componentaction = event.currentTarget.dataset.id.split("-");
         cl_parts[1].component = clicked_componentaction[0];
         cl_parts[1].action = clicked_componentaction[1];
-        // console.log("clicked a action: " + cl_parts[1].action);
-      }
-
-      /* hacky bit of hardcoding to make the interface a bit nicer */
-      if (cl_parts[1].component == "light") {
-        cl_parts[0].component = "light";
-        cl_parts[0].feature = "switch";
-      }
-
-      if (cl_parts[1].component == "base") {
-        cl_parts[0].component = "base";
-        cl_parts[0].feature = "orientation";
+        console.log("INFO: clicked an action: " + cl_parts[1].action);
+      } else {
+        console.log("ERROR: something wasn't clicked right?");
       }
 
       if (cl_parts[0].component == cl_parts[1].component && cl_parts[0].component != "") {
         _this9.update_links(cl_parts[0].component, cl_parts[0].feature, cl_parts[1].action);
 
         cl_parts[1].component = "";
+        // this stops the last clicked action from becoming the action for the next component
       }
 
       _this9.setState({
@@ -420,8 +417,8 @@ var RoboArmApp = function (_React$Component5) {
 
       for (var i = 0; i < curr_links.length; i++) {
         // console.log("checking: " + i);
-        // console.log("component: " + links[i].component);
-        // console.log("feature: " + links[i].feature);
+        // console.log("component: " + curr_links[i].component);
+        // console.log("feature: " + curr_links[i].feature);
         if (curr_links[i].component == component && curr_links[i].feature == feature) {
           curr_links[i].ids = [component + "-" + feature, component + "-" + action];
           updated_link = true;
@@ -457,6 +454,7 @@ var RoboArmApp = function (_React$Component5) {
         return resp.json();
       }).then(function (data) {
         raa.update_move_command(data);
+        console.log("INFO: updated move command: " + data);
       }).catch(function (error) {
         console.log("ERROR: " + error);
       });
@@ -499,7 +497,10 @@ var RoboArmApp = function (_React$Component5) {
           React.createElement(
             Box,
             { margin: "medium" },
-            React.createElement("img", { src: "http://giraffe-pi.local/html/cam_pic_new.php?time=1515935947937&pDelay=40000", alt: "Live Feed" })
+            React.createElement("img", {
+              src: window.location.protocol + "//" + window.location.hostname + "/html/cam_pic_new.php",
+              alt: "Live Feed"
+            })
           ),
           React.createElement(
             Box,
@@ -519,7 +520,7 @@ var RoboArmApp = function (_React$Component5) {
                   React.createElement(RoboArmComponents, {
                     componentConfig: this.props.roboarmConfig.components,
                     roboArmName: this.props.roboarmConfig.description,
-                    onClick: this.command_click
+                    onClickItem: this.command_click
                   })
                 )
               )
