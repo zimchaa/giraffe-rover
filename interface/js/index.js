@@ -16,32 +16,6 @@ var CLICKED_ITEMS = [{
   action: ""
 }];
 
-var LINKS = [{
-  colorIndex: "graph-2",
-  ids: ["light-switch", "light-off"],
-  component: "light",
-  feature: "switch"
-}, {
-  colorIndex: "graph-2",
-  ids: ["arm-grip", "arm-stop"],
-  component: "arm",
-  feature: "grip"
-}, {
-  colorIndex: "graph-2",
-  ids: ["arm-wrist", "arm-stop"],
-  component: "arm",
-  feature: "wrist"
-}, {
-  colorIndex: "graph-2",
-  ids: ["arm-elbow", "arm-stop"],
-  component: "arm",
-  feature: "elbow"
-}, {
-  colorIndex: "graph-2",
-  ids: ["tracks-both", "tracks-stop"],
-  component: "tracks",
-  feature: "both"
-}];
 
 
 var RoboArmComponents = function (_React$Component) {
@@ -311,7 +285,7 @@ var RoboArmApp = function (_React$Component5) {
       roboarmConfig: null,
       move_command: { arm: 0, base: 0, light: 0 },
       clicked_items: CLICKED_ITEMS,
-      command_links: LINKS
+      command_links: []
     };
     return _this9;
   }
@@ -324,7 +298,23 @@ var RoboArmApp = function (_React$Component5) {
       fetch(api_url + "/config").then(function (resp) {
         return resp.json();
       }).then(function (data) {
-        _this9.setState({ roboarmConfig: data });
+        var links = [];
+        Object.keys(data.components).forEach(function (compName) {
+          var features = data.components[compName].features;
+          var featureNames = Object.keys(features);
+          var controlFeature = featureNames.length > 1 && featureNames.indexOf('all') > -1 ? 'all' : featureNames[0];
+          var controlActions = Object.keys(features[controlFeature].actions);
+          var defaultAction = controlActions.indexOf('stop') > -1 ? 'stop' : controlActions.indexOf('off') > -1 ? 'off' : controlActions[0];
+          featureNames.filter(function (f) { return f !== 'all'; }).forEach(function (featName) {
+            links.push({
+              colorIndex: "graph-2",
+              ids: [compName + "-" + featName, compName + "-" + defaultAction],
+              component: compName,
+              feature: featName
+            });
+          });
+        });
+        _this9.setState({ roboarmConfig: data, command_links: links });
       }).catch(function (error) {
         console.log("ERROR loading config: " + error);
       });

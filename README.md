@@ -33,8 +33,7 @@ The key improvement over simpler implementations is that multiple motors can run
 Install Python dependencies:
 
 ```bash
-sudo pip3 install bottle
-sudo pip3 install --pre pyusb
+sudo pip3 install -r requirements.txt
 ```
 
 Install and configure the camera stream:
@@ -183,7 +182,7 @@ GET /interface/<filepath>            — serves static frontend files
 
 ### Frontend: `interface/`
 
-The frontend is a React app served as static files by Bottle. It requires no build step — React, ReactDOM, and Grommet are loaded from CDN, and the JS is pre-transpiled from Babel.
+The frontend is a React app served as static files by Bottle. React, ReactDOM, and Grommet are loaded from CDN. `interface/js/index.js` is the compiled output — the source of truth is `interface/babel/index.babel` (JSX + ES6 class properties), which should be compiled to `index.js` whenever it changes.
 
 #### Component Hierarchy
 
@@ -219,20 +218,49 @@ The MJPEG feed from RPi-Cam-Web-Interface is embedded as an `<img>` tag pointing
 
 ---
 
+---
+
+## Frontend Build
+
+The JSX source lives in `interface/babel/index.babel`. After editing it, compile to `interface/js/index.js` using Babel. You only need Node.js for this step — it runs on any machine, not the Pi.
+
+**Install build dependencies (once):**
+
+```bash
+npm install
+```
+
+**Compile:**
+
+```bash
+npm run build
+```
+
+Then copy or sync the updated `interface/js/index.js` to the Pi alongside the rest of the interface directory.
+
+The `package.json` uses `@babel/cli` with `@babel/preset-react` (JSX) and `@babel/preset-env` (ES6→ES5 for broad browser compatibility), plus `@babel/plugin-proposal-class-properties` for the arrow-function method syntax.
+
+> **Note:** Do not edit `interface/js/index.js` directly — it will be overwritten on the next build.
+
+---
+
 ## Project Structure
 
 ```
 giraffe-rover/
 ├── giraffe-rover.py          # Backend: Bottle server + USB motor control
+├── requirements.txt          # Python dependencies
+├── package.json              # Frontend build tooling (Babel)
+├── .gitignore
 └── interface/
     ├── index.html            # Frontend entry point (loads CDN deps + index.js)
     ├── css/
     │   └── style.css         # Topology node and layout styles
     ├── js/
-    │   ├── index.js          # React app (pre-transpiled from Babel)
+    │   ├── index.js          # Compiled output — do not edit directly
     │   └── oojjnj.js         # Grommet/Topology utility shim
     └── babel/
-        └── index.babel       # Original Babel/JSX source
+        └── index.babel       # JSX source — edit this, then run npm run build
 ```
 
 ---

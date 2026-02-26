@@ -9,39 +9,6 @@ const CLICKED_ITEMS = [
   }
 ];
 
-const LINKS = [
-  {
-    colorIndex: "graph-2",
-    ids: ["light-switch", "light-off"],
-    component: "light",
-    feature: "switch"
-  },
-  {
-    colorIndex: "graph-2",
-    ids: ["arm-grip", "arm-stop"],
-    component: "arm",
-    feature: "grip"
-  },
-  {
-    colorIndex: "graph-2",
-    ids: ["arm-wrist", "arm-stop"],
-    component: "arm",
-    feature: "wrist"
-  },
-  {
-    colorIndex: "graph-2",
-    ids: ["arm-elbow", "arm-stop"],
-    component: "arm",
-    feature: "elbow"
-  },
-  {
-    colorIndex: "graph-2",
-    ids: ["tracks-both", "tracks-stop"],
-    component: "tracks",
-    feature: "both"
-  }
-];
-
 
 class RoboArmComponents extends React.Component {
   render() {
@@ -56,7 +23,7 @@ class RoboArmComponents extends React.Component {
         <RoboArmComponentFeatures
           featureConfig={this.props.componentConfig[componentName].features}
           componentName={componentName}
-          onClick={this.props.onClick}
+          onClickItem={this.props.onClickItem}
         />
         <Topology.Label className="raa_component_label">
           {componentName.toUpperCase()}
@@ -64,7 +31,7 @@ class RoboArmComponents extends React.Component {
         <RoboArmControlFeatures
           featureConfig={this.props.componentConfig[componentName].features}
           controlName={componentName}
-          onClick={this.props.onClick}
+          onClickItem={this.props.onClickItem}
         />
       </Topology.Part>
     ));
@@ -77,10 +44,9 @@ class RoboArmComponents extends React.Component {
       >
         <Topology.Part
           a11yTitle="RoboArm Component Structure"
-          className="RoboArmComponents"
+          className="raa_structure"
           direction="column"
           reverse={true}
-          className="raa_structure"
         >
           {componentParts}
         </Topology.Part>
@@ -91,12 +57,8 @@ class RoboArmComponents extends React.Component {
 
 class RoboArmComponentFeatures extends React.Component {
   render() {
-    // const featureRemove = "all";
     const componentName = this.props.componentName;
     const featureKeys = Object.keys(this.props.featureConfig);
-    /* let displayFeatureKeys = featureKeys.filter(
-      feature => feature.indexOf(featureRemove) < 0
-    ); */
     const featureParts = featureKeys.map(featureName => (
       <Topology.Part
         id={componentName + "-" + featureName}
@@ -107,10 +69,11 @@ class RoboArmComponentFeatures extends React.Component {
         justify="start"
         align="center"
         key={featureName}
-        onClick={this.props.onClick}
         className="raa_feature"
         reverse={true}
-        name="componentfeature"
+        onClick={this.props.onClickItem}
+        data-id={componentName + "-" + featureName}
+        data-type="componentFeature"
       />
     ));
     return (
@@ -125,7 +88,6 @@ class RoboArmControlFeatures extends React.Component {
   render() {
     const featureDisplay = "all";
     const featureKeys = Object.keys(this.props.featureConfig);
-    // console.log(featureKeys.length == 1);
     let displayFeatureKeys = [];
     if (featureKeys.length == 1) {
       displayFeatureKeys = featureKeys;
@@ -134,7 +96,6 @@ class RoboArmControlFeatures extends React.Component {
         feature => feature.indexOf(featureDisplay) > -1
       );
     }
-    // console.log(displayFeatureKeys);
     const featureParts = displayFeatureKeys.map(featureName => (
       <Topology.Part
         id={featureName}
@@ -148,7 +109,7 @@ class RoboArmControlFeatures extends React.Component {
           actionConfig={this.props.featureConfig[featureName].actions}
           featureName={featureName}
           controlName={this.props.controlName}
-          onClick={this.props.onClick}
+          onClickItem={this.props.onClickItem}
         />
       </Topology.Part>
     ));
@@ -175,9 +136,10 @@ class RoboArmControlFeatureActions extends React.Component {
         justify="start"
         align="center"
         key={featureName + "-" + actionName}
-        onClick={this.props.onClick}
         className="raa_action"
-        name="componentaction"
+        onClick={this.props.onClickItem}
+        data-id={controlName + "-" + actionName}
+        data-type="componentAction"
       />
     ));
     return (
@@ -195,7 +157,7 @@ class RoboArmApp extends React.Component {
       roboarmConfig: null,
       move_command: { arm: 0b00000000, base: 0b00000000, light: 0b00000000 },
       clicked_items: CLICKED_ITEMS,
-      command_links: LINKS
+      command_links: []
     };
   }
 
@@ -203,7 +165,30 @@ class RoboArmApp extends React.Component {
     const api_url = window.location.protocol + "//" + window.location.hostname + ":" + window.location.port;
     fetch(api_url + "/config")
       .then(resp => resp.json())
-      .then(data => this.setState({ roboarmConfig: data }))
+      .then(data => {
+        // derive initial topology links from config:
+        // for each feature (excluding the "all" aggregate), link it to the default action
+        // of the displayed control feature ("all" for multi-feature components, the feature itself otherwise)
+        const links = [];
+        Object.keys(data.components).forEach(compName => {
+          const features = data.components[compName].features;
+          const featureNames = Object.keys(features);
+          const controlFeature = featureNames.length > 1 && featureNames.includes('all') ? 'all' : featureNames[0];
+          const controlActions = Object.keys(features[controlFeature].actions);
+          const defaultAction = controlActions.includes('stop') ? 'stop'
+            : controlActions.includes('off') ? 'off'
+            : controlActions[0];
+          featureNames.filter(f => f !== 'all').forEach(featName => {
+            links.push({
+              colorIndex: "graph-2",
+              ids: [compName + "-" + featName, compName + "-" + defaultAction],
+              component: compName,
+              feature: featName
+            });
+          });
+        });
+        this.setState({ roboarmConfig: data, command_links: links });
+      })
       .catch(error => console.log("ERROR loading config: " + error));
   }
 
@@ -212,19 +197,9 @@ class RoboArmApp extends React.Component {
     let curr_links = this.state.command_links;
 
     for (let i = 0; i < curr_links.length; i++) {
-      // console.log("checking: " + i);
-      // console.log("component: " + links[i].component);
-      // console.log("feature: " + links[i].feature);
-      if (
-        curr_links[i].component == component &&
-        curr_links[i].feature == feature
-      ) {
-        curr_links[i].ids = [
-          component + "-" + feature,
-          component + "-" + action
-        ];
+      if (curr_links[i].component == component && curr_links[i].feature == feature) {
+        curr_links[i].ids = [component + "-" + feature, component + "-" + action];
         updated_link = true;
-        // console.log("updating: " + i);
       }
     }
     if (!updated_link) {
@@ -236,40 +211,25 @@ class RoboArmApp extends React.Component {
       });
     }
 
-    this.setState({
-      command_links: curr_links
-    });
-
+    this.setState({ command_links: curr_links });
     this.invoke_api(component, feature, action);
   }
 
   invoke_api(component, feature, action) {
-    const api_url =
-      window.location.protocol +
-      "//" +
-      window.location.hostname +
-      ":" +
-      window.location.port;
-    const api_path = "roboarm/" + component + "/" + feature + "/" + action;
-
+    const api_url = window.location.protocol + "//" + window.location.hostname + ":" + window.location.port;
+    const api_path = "/roboarm/" + component + "/" + feature + "/" + action;
     console.log(api_url + api_path);
-
-    let raa = this;
-
-    fetch("http://echo.jsontest.com/base/0/arm/0/light/1")
+    fetch(api_url + api_path)
       .then(resp => resp.json())
-      .then(function(data) {
-        raa.update_move_command(data);
+      .then(data => {
+        this.update_move_command(data);
+        console.log("INFO: updated move command: " + data);
       })
-      .catch(function(error) {
-        console.log("ERROR: " + error);
-      });
+      .catch(error => console.log("ERROR: " + error));
   }
 
   update_move_command(move_command_response) {
-    this.setState({
-      move_command: move_command_response
-    });
+    this.setState({ move_command: move_command_response });
   }
 
   handle_mode_switch = event => {
@@ -277,49 +237,34 @@ class RoboArmApp extends React.Component {
   };
 
   command_click = event => {
-    let clicked_componentfeature, clicked_componentaction, cl_parts, cl_links;
+    let clicked_componentfeature, clicked_componentaction, cl_parts;
 
     cl_parts = this.state.clicked_items;
 
-    if (event.target.parentElement.getAttribute("name") == "componentfeature") {
-      clicked_componentfeature = event.target.parentNode.id.split("-");
+    console.log("INFO: clicked element target data-type: " + event.currentTarget.dataset.type);
+    console.log("INFO: clicked element target data-id: " + event.currentTarget.dataset.id);
+
+    if (event.currentTarget.dataset.type == "componentFeature") {
+      clicked_componentfeature = event.currentTarget.dataset.id.split("-");
       cl_parts[0].component = clicked_componentfeature[0];
       cl_parts[0].feature = clicked_componentfeature[1];
-      // console.log("clicked a feature: " + cl_parts[0].feature);
-    } else {
-      clicked_componentaction = event.target.parentNode.id.split("-");
+      console.log("INFO: clicked a feature: " + cl_parts[0].feature);
+    } else if (event.currentTarget.dataset.type == "componentAction") {
+      clicked_componentaction = event.currentTarget.dataset.id.split("-");
       cl_parts[1].component = clicked_componentaction[0];
       cl_parts[1].action = clicked_componentaction[1];
-      // console.log("clicked a action: " + cl_parts[1].action);
+      console.log("INFO: clicked an action: " + cl_parts[1].action);
+    } else {
+      console.log("ERROR: something wasn't clicked right?");
     }
 
-    /* hacky bit of hardcoding to make the interface a bit nicer */
-    if (cl_parts[1].component == "light") {
-      cl_parts[0].component = "light";
-      cl_parts[0].feature = "switch";
-    }
-
-    if (cl_parts[1].component == "base") {
-      cl_parts[0].component = "base";
-      cl_parts[0].feature = "orientation";
-    }
-
-    if (
-      cl_parts[0].component == cl_parts[1].component &&
-      cl_parts[0].component != ""
-    ) {
-      this.update_links(
-        cl_parts[0].component,
-        cl_parts[0].feature,
-        cl_parts[1].action
-      );
-
+    if (cl_parts[0].component == cl_parts[1].component && cl_parts[0].component != "") {
+      this.update_links(cl_parts[0].component, cl_parts[0].feature, cl_parts[1].action);
+      // reset component so the last clicked action doesn't carry over to the next component
       cl_parts[1].component = "";
     }
 
-    this.setState({
-      clicked_items: cl_parts
-    });
+    this.setState({ clicked_items: cl_parts });
   };
 
   render() {
@@ -330,7 +275,6 @@ class RoboArmApp extends React.Component {
       <App>
         <Box
           align="center"
-          pad="medium"
           colorIndex="neutral-1"
           margin="medium"
           pad="small"
@@ -347,7 +291,10 @@ class RoboArmApp extends React.Component {
             />
           </Box>
           <Box margin="medium">
-            <img src="http://roboarm.local:8081" alt="Live Feed" />
+            <img
+              src={window.location.protocol + "//" + window.location.hostname + "/html/cam_pic_new.php"}
+              alt="Live Feed"
+            />
           </Box>
           <Box margin="medium">
             <Topology
@@ -359,7 +306,7 @@ class RoboArmApp extends React.Component {
                   <RoboArmComponents
                     componentConfig={this.state.roboarmConfig.components}
                     roboArmName={this.state.roboarmConfig.description}
-                    onClick={this.command_click}
+                    onClickItem={this.command_click}
                   />
                 </Topology.Part>
               </Topology.Parts>

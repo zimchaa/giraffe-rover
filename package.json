@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "build": "babel interface/babel/index.babel --presets @babel/preset-react,@babel/preset-env --plugins @babel/plugin-proposal-class-properties -o interface/js/index.js"
+  },
+  "devDependencies": {
+    "@babel/cli": "*",
+    "@babel/core": "*",
+    "@babel/preset-env": "*",
+    "@babel/preset-react": "*",
+    "@babel/plugin-proposal-class-properties": "*"
+  }
+}
