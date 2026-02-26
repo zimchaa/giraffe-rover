@@ -3,11 +3,79 @@
 
 # OWI-535 Robotic Arm - Advanced Web Interface and Controller / Python + Bottle
 
+import io
 import os
-from bottle import Bottle, run, static_file
+import threading
+import time
+from bottle import Bottle, run, static_file, response, abort
 import usb.core
 import usb.util
 
+
+# ---------------------------------------------------------------------------
+# Camera setup
+# Try picamera2 (Raspbian Bullseye+) then fall back to picamera (older).
+# If neither is available the /stream endpoint returns 503.
+# ---------------------------------------------------------------------------
+
+try:
+  from picamera2 import Picamera2
+  _USE_PICAMERA2 = True
+except ImportError:
+  _USE_PICAMERA2 = False
+
+if not _USE_PICAMERA2:
+  try:
+    import picamera
+    _HAVE_PICAMERA = True
+  except ImportError:
+    _HAVE_PICAMERA = False
+    print("WARN: No camera library found. /stream endpoint will be unavailable.")
+else:
+  _HAVE_PICAMERA = False
+
+_camera_available = _USE_PICAMERA2 or _HAVE_PICAMERA
+
+_frame_lock = threading.Lock()
+_frame = None
+
+
+def _capture_frames():
+  global _frame
+  try:
+    if _USE_PICAMERA2:
+      camera = Picamera2()
+      camera.configure(camera.create_video_configuration(main={"size": (640, 480)}))
+      camera.start()
+      try:
+        while True:
+          buf = io.BytesIO()
+          camera.capture_file(buf, format='jpeg')
+          with _frame_lock:
+            _frame = buf.getvalue()
+          time.sleep(0.05)
+      finally:
+        camera.stop()
+    else:
+      with picamera.PiCamera(resolution=(640, 480), framerate=20) as camera:
+        stream = io.BytesIO()
+        for _ in camera.capture_continuous(stream, format='jpeg', use_video_port=True):
+          with _frame_lock:
+            _frame = stream.getvalue()
+          stream.seek(0)
+          stream.truncate()
+  except Exception as e:
+    print(f"ERROR: camera capture thread failed: {e}")
+
+
+if _camera_available:
+  _capture_thread = threading.Thread(target=_capture_frames, daemon=True)
+  _capture_thread.start()
+
+
+# ---------------------------------------------------------------------------
+# Motor bitmask helpers
+# ---------------------------------------------------------------------------
 
 def motormsk(motor_id, motor_config):
   return (motor_config[motor_id][0][0] | motor_config[motor_id][1][0], motor_config[motor_id][0][1] | motor_config[motor_id][1][1], motor_config[motor_id][0][2] | motor_config[motor_id][1][2])
@@ -160,7 +228,8 @@ ROVER = {
 }
 
 # Global motor state - mutated in place by each command request.
-# Note: Bottle's default server is single-threaded, which keeps this safe.
+# Protected by _move_command_lock since waitress serves requests on multiple threads.
+_move_command_lock = threading.Lock()
 move_command = [0, 0, 0]
 
 
@@ -222,6 +291,10 @@ def transfer_robocontroller(move_command, ctrl_roboarm=OWI535USB["initialisation
   return transfer_stats
 
 
+# ---------------------------------------------------------------------------
+# HTTP routes
+# ---------------------------------------------------------------------------
+
 app = Bottle()
 
 _INTERFACE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'interface')
@@ -248,19 +321,34 @@ def get_config():
   return build_config()
 
 
+@app.route('/stream')
+def camera_stream():
+  if not _camera_available:
+    abort(503, "Camera not available")
+  response.content_type = 'multipart/x-mixed-replace; boundary=frame'
+
+  def generate():
+    while True:
+      with _frame_lock:
+        frame = _frame
+      if frame is not None:
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+      time.sleep(0.05)
+
+  return generate()
+
+
 @app.route('/roboarm/<component>/<feature>/<verb>')
 def move_roboarm(component, feature, verb):
   print(f"request: component={component}, feature={feature}, verb={verb}")
-  print(f"current move_command:{move_command}")
-
-  change_move_command(move_command, ROVER["components"], component, feature, verb)
-
-  print(f"new move_command:{move_command}")
-
-  transfer_attempt = transfer_robocontroller(move_command)
-  print(f"transfer_attempt:{transfer_attempt}")
-
-  return move_command[0]
+  with _move_command_lock:
+    print(f"current move_command:{move_command}")
+    change_move_command(move_command, ROVER["components"], component, feature, verb)
+    print(f"new move_command:{move_command}")
+    transfer_attempt = transfer_robocontroller(move_command)
+    print(f"transfer_attempt:{transfer_attempt}")
+    return move_command[0]
 
 
 @app.route('/interface/<filepath:path>')
@@ -268,4 +356,6 @@ def server_static(filepath):
   return static_file(filepath, root=_INTERFACE_ROOT)
 
 
-run(app, host='0.0.0.0', port=8888)
+# Use waitress for multi-threaded serving — required so the long-lived /stream
+# connection does not block motor command requests on /roboarm.
+run(app, host='0.0.0.0', port=8888, server='waitress')

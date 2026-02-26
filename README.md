@@ -36,11 +36,19 @@ Install Python dependencies:
 sudo pip3 install -r requirements.txt
 ```
 
-Install and configure the camera stream:
+Install the camera library. The server auto-detects which one is present at startup:
 
-1. Install [RPi-Cam-Web-Interface](https://elinux.org/RPi-Cam-Web-Interface)
-2. In the Advanced/default interface, go to **System** and switch the stream type from `Default-Stream` to `MJPEG-Stream`
-3. The MJPEG stream will then be embeddable in the web interface
+**Raspbian Bullseye or later (picamera2):**
+```bash
+sudo apt install python3-picamera2
+```
+
+**Older Raspbian (picamera):**
+```bash
+sudo apt install python3-picamera
+```
+
+If neither library is installed the server starts normally but `GET /stream` returns 503.
 
 ---
 
@@ -66,16 +74,20 @@ http://your-device-hostname.local:8888/interface/index.html
 
 ```
 Browser
-  │  (HTTP GET /roboarm/<component>/<feature>/<verb>)
-  ▼
-giraffe-rover.py  (Bottle web server, port 8888)
-  │  (3-byte bitmask command)
-  ▼
-PyUSB ctrl_transfer
-  │
-  ▼
-OWI-535 USB Interface  →  Motors / LED
+  ├── GET /interface/*          static files (HTML/CSS/JS)
+  ├── GET /config               rover component/feature/verb tree (JSON)
+  ├── GET /stream               MJPEG camera feed (multipart/x-mixed-replace)
+  └── GET /roboarm/c/f/v        motor command
+          │
+          ▼
+  giraffe-rover.py  (Bottle + waitress, port 8888)
+          │
+          ├── PyUSB ctrl_transfer  →  OWI-535 USB  →  Motors / LED
+          │
+          └── picamera2 / picamera  →  JPEG frame buffer  →  /stream
 ```
+
+The server runs on `waitress` (multi-threaded) so the long-lived `/stream` connection does not block motor command requests.
 
 ---
 
@@ -175,6 +187,8 @@ GET /roboarm/arm/all/stop            — stop all arm motors
 ```
 
 ```
+GET /stream                          — MJPEG camera stream (multipart/x-mixed-replace)
+GET /config                          — rover config as JSON
 GET /interface/<filepath>            — serves static frontend files
 ```
 
@@ -214,9 +228,7 @@ The response updates the displayed `move_command` state.
 
 #### Live Video
 
-The MJPEG feed from RPi-Cam-Web-Interface is embedded as an `<img>` tag pointing to `/html/cam_pic_new.php` on the same hostname (port 80), which refreshes automatically.
-
----
+The MJPEG feed is served directly by giraffe-rover at `GET /stream` as a `multipart/x-mixed-replace` response. The frontend embeds it as a plain `<img>` tag — the browser keeps the connection open and repaints the image as each new JPEG frame arrives. No third-party streaming tool is required.
 
 ---
 

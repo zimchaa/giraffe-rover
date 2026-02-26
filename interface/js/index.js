@@ -412,7 +412,7 @@ var RoboArmApp = function (_React$Component5) {
             Box,
             { margin: "medium" },
             React.createElement("img", {
-              src: window.location.protocol + "//" + window.location.hostname + "/html/cam_pic_new.php",
+              src: window.location.protocol + "//" + window.location.hostname + ":" + window.location.port + "/stream",
               alt: "Live Feed"
             })
           ),
