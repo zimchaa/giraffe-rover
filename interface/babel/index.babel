@@ -42,107 +42,6 @@ const LINKS = [
   }
 ];
 
-const ROBOARM = {
-  description: "Giraffe Rover",
-  identification: {
-    description:
-      "These are the parameters used to identify the RoboArm using the USB connection",
-    idVendor: 0x1267,
-    idProduct: 0x000
-  },
-  initialisation: {
-    description:
-      "These variables are used to transfer data on the created USB connection",
-    bmRequestType: 0x40,
-    bmRequest: 6,
-    wValue: 0x100,
-    wIndex: 0
-  },
-  components: {
-    tracks: {
-      description:
-        "The <ARM> components are mounted on this rotating base, with approx. 270deg freedom, clockwise and counterclockwise rotation is considered from the top of the RoboArm",
-      mask: 0b11111111,
-      features: {
-        both: {
-          mask: 0b00000011,
-          actions: {
-            forward: 0b00000001,
-            stop: 0b00000010,
-            reverse: 0b00000000,
-            turncw: 0b0,
-            turnccw: 0b0
-          }
-        }
-      }
-    },
-    arm: {
-      description:
-        "This component is mounted on the <TRACKS>, and replicates a typical human arm - with features, i.e. shoulder (unplugged), elbow, wrist and a gripper.",
-      mask: 0b11111111,
-      features: {
-        all: {
-          description:
-            "This is a pseudo-feature that allows for complex functions to be predescribed for the whole <ARM> component",
-          mask: 0b11111111,
-          type: "virtual",
-          actions: {
-            open: 0b10101010,
-            close: 0b01010101,
-            stop: 0b00000000
-          }
-        },
-        elbow: {
-          description: "",
-          mask: 0b00110000,
-          actions: {
-            open: 0b00010000,
-            close: 0b00100000,
-            stop: 0b00000000
-          }
-        },
-        wrist: {
-          description: "",
-          mask: 0b00001100,
-          actions: {
-            open: 0b00000100,
-            close: 0b00001000,
-            lift: 0b00000100,
-            stop: 0b00000000
-          }
-        },
-        grip: {
-          description: "",
-          mask: 0b00000011,
-          actions: {
-            open: 0b00000001,
-            close: 0b00000010,
-            grab: 0b00000010,
-            drop: 0b00000001,
-            stop: 0b00000000,
-            pause: 0b00000000
-          }
-        }
-      }
-    },
-    light: {
-      description:
-        "This is an LED mounted behind the <GRIP> feature on the <ARM> component - the focus of the light is useful to highlight where to grab, or that the system is in use",
-      mask: 0b11111111,
-      features: {
-        switch: {
-          description:
-            "The only feature of the <LIGHT> is the <SWITCH>, simply flipping the last bit of the 3rd byte",
-          mask: 0b00000001,
-          actions: {
-            on: 0b00000001,
-            off: 0b00000000
-          }
-        }
-      }
-    }
-  }
-};
 
 class RoboArmComponents extends React.Component {
   render() {
@@ -293,10 +192,19 @@ class RoboArmApp extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
+      roboarmConfig: null,
       move_command: { arm: 0b00000000, base: 0b00000000, light: 0b00000000 },
       clicked_items: CLICKED_ITEMS,
       command_links: LINKS
     };
+  }
+
+  componentDidMount() {
+    const api_url = window.location.protocol + "//" + window.location.hostname + ":" + window.location.port;
+    fetch(api_url + "/config")
+      .then(resp => resp.json())
+      .then(data => this.setState({ roboarmConfig: data }))
+      .catch(error => console.log("ERROR loading config: " + error));
   }
 
   update_links(component, feature, action) {
@@ -415,6 +323,9 @@ class RoboArmApp extends React.Component {
   };
 
   render() {
+    if (!this.state.roboarmConfig) {
+      return <App><Box colorIndex="neutral-1" pad="medium">Loading...</Box></App>;
+    }
     return (
       <App>
         <Box
@@ -440,14 +351,14 @@ class RoboArmApp extends React.Component {
           </Box>
           <Box margin="medium">
             <Topology
-              a11yTitle={this.props.roboarmConfig.description}
+              a11yTitle={this.state.roboarmConfig.description}
               links={this.state.command_links}
             >
               <Topology.Parts direction="column" uniform={true}>
                 <Topology.Part direction="column">
                   <RoboArmComponents
-                    componentConfig={this.props.roboarmConfig.components}
-                    roboArmName={this.props.roboarmConfig.description}
+                    componentConfig={this.state.roboarmConfig.components}
+                    roboArmName={this.state.roboarmConfig.description}
                     onClick={this.command_click}
                   />
                 </Topology.Part>
@@ -461,4 +372,4 @@ class RoboArmApp extends React.Component {
 }
 
 var element = document.getElementById("content");
-ReactDOM.render(<RoboArmApp roboarmConfig={ROBOARM} />, element);
+ReactDOM.render(<RoboArmApp />, element);

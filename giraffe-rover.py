@@ -224,6 +224,25 @@ def transfer_robocontroller(move_command, ctrl_roboarm=OWI535USB["initialisation
 
 app = Bottle()
 
+def build_config():
+  config = {"description": "Giraffe Rover", "components": {}}
+  for comp_name, comp in ROVER["components"].items():
+    features = {}
+    for feat_name, feat in comp["features"].items():
+      features[feat_name] = {
+        "description": feat.get("description", ""),
+        "actions": {verb: list(cmd) for verb, cmd in feat["verbs"].items()}
+      }
+    config["components"][comp_name] = {
+      "description": comp.get("description", ""),
+      "features": features
+    }
+  return config
+
+@app.route('/config')
+def get_config():
+  return build_config()
+
 @app.route('/roboarm/<component>/<feature>/<verb>')
 def move_roboarm(component, feature, verb, move_command=move_command):
   
