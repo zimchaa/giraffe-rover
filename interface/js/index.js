@@ -16,127 +16,7 @@ var CLICKED_ITEMS = [{
   action: ""
 }];
 
-var LINKS = [{
-  colorIndex: "graph-2",
-  ids: ["light-switch", "light-off"],
-  component: "light",
-  feature: "switch"
-}, {
-  colorIndex: "graph-2",
-  ids: ["arm-grip", "arm-stop"],
-  component: "arm",
-  feature: "grip"
-}, {
-  colorIndex: "graph-2",
-  ids: ["arm-wrist", "arm-stop"],
-  component: "arm",
-  feature: "wrist"
-}, {
-  colorIndex: "graph-2",
-  ids: ["arm-elbow", "arm-stop"],
-  component: "arm",
-  feature: "elbow"
-}, {
-  colorIndex: "graph-2",
-  ids: ["tracks-both", "tracks-stop"],
-  component: "tracks",
-  feature: "both"
-}];
 
-var ROBOARM = {
-  description: "Giraffe Rover",
-  identification: {
-    description: "These are the parameters used to identify the RoboArm using the USB connection",
-    idVendor: 0x1267,
-    idProduct: 0x000
-  },
-  initialisation: {
-    description: "These variables are used to transfer data on the created USB connection",
-    bmRequestType: 0x40,
-    bmRequest: 6,
-    wValue: 0x100,
-    wIndex: 0
-  },
-  components: {
-    tracks: {
-      description: "The <ARM> components are mounted on this rotating base, with approx. 270deg freedom, clockwise and counterclockwise rotation is considered from the top of the RoboArm",
-      mask: 255,
-      features: {
-        both: {
-          mask: 3,
-          actions: {
-            forward: 1,
-            stop: 2,
-            reverse: 0,
-            turncw: 0,
-            turnccw: 0
-          }
-        }
-      }
-    },
-    arm: {
-      description: "This component is mounted on the <TRACKS>, and replicates a typical human arm - with features, i.e. shoulder (unplugged), elbow, wrist and a gripper.",
-      mask: 255,
-      features: {
-        all: {
-          description: "This is a pseudo-feature that allows for complex functions to be predescribed for the whole <ARM> component",
-          mask: 255,
-          type: "virtual",
-          actions: {
-            open: 170,
-            close: 85,
-            stop: 0
-          }
-        },
-        elbow: {
-          description: "",
-          mask: 48,
-          actions: {
-            open: 16,
-            close: 32,
-            stop: 0
-          }
-        },
-        wrist: {
-          description: "",
-          mask: 12,
-          actions: {
-            open: 4,
-            close: 8,
-            lift: 4,
-            stop: 0
-          }
-        },
-        grip: {
-          description: "",
-          mask: 3,
-          actions: {
-            open: 1,
-            close: 2,
-            grab: 2,
-            drop: 1,
-            stop: 0,
-            pause: 0
-          }
-        }
-      }
-    },
-    light: {
-      description: "This is an LED mounted behind the <GRIP> feature on the <ARM> component - the focus of the light is useful to highlight where to grab, or that the system is in use",
-      mask: 255,
-      features: {
-        switch: {
-          description: "The only feature of the <LIGHT> is the <SWITCH>, simply flipping the last bit of the 3rd byte",
-          mask: 1,
-          actions: {
-            on: 1,
-            off: 0
-          }
-        }
-      }
-    }
-  }
-};
 
 var RoboArmComponents = function (_React$Component) {
   _inherits(RoboArmComponents, _React$Component);
@@ -402,14 +282,44 @@ var RoboArmApp = function (_React$Component5) {
     };
 
     _this9.state = {
+      roboarmConfig: null,
       move_command: { arm: 0, base: 0, light: 0 },
       clicked_items: CLICKED_ITEMS,
-      command_links: LINKS
+      command_links: []
     };
     return _this9;
   }
 
   _createClass(RoboArmApp, [{
+    key: "componentDidMount",
+    value: function componentDidMount() {
+      var _this9 = this;
+      var api_url = window.location.protocol + "//" + window.location.hostname + ":" + window.location.port;
+      fetch(api_url + "/config").then(function (resp) {
+        return resp.json();
+      }).then(function (data) {
+        var links = [];
+        Object.keys(data.components).forEach(function (compName) {
+          var features = data.components[compName].features;
+          var featureNames = Object.keys(features);
+          var controlFeature = featureNames.length > 1 && featureNames.indexOf('all') > -1 ? 'all' : featureNames[0];
+          var controlActions = Object.keys(features[controlFeature].actions);
+          var defaultAction = controlActions.indexOf('stop') > -1 ? 'stop' : controlActions.indexOf('off') > -1 ? 'off' : controlActions[0];
+          featureNames.filter(function (f) { return f !== 'all'; }).forEach(function (featName) {
+            links.push({
+              colorIndex: "graph-2",
+              ids: [compName + "-" + featName, compName + "-" + defaultAction],
+              component: compName,
+              feature: featName
+            });
+          });
+        });
+        _this9.setState({ roboarmConfig: data, command_links: links });
+      }).catch(function (error) {
+        console.log("ERROR loading config: " + error);
+      });
+    }
+  }, {
     key: "update_links",
     value: function update_links(component, feature, action) {
       var updated_link = false;
@@ -471,6 +381,10 @@ var RoboArmApp = function (_React$Component5) {
     value: function render() {
       var _React$createElement2;
 
+      if (!this.state.roboarmConfig) {
+        return React.createElement(App, null, React.createElement(Box, { colorIndex: "neutral-1", pad: "medium" }, "Loading..."));
+      }
+
       return React.createElement(
         App,
         null,
@@ -498,7 +412,7 @@ var RoboArmApp = function (_React$Component5) {
             Box,
             { margin: "medium" },
             React.createElement("img", {
-              src: window.location.protocol + "//" + window.location.hostname + "/html/cam_pic_new.php",
+              src: window.location.protocol + "//" + window.location.hostname + ":" + window.location.port + "/stream",
               alt: "Live Feed"
             })
           ),
@@ -508,7 +422,7 @@ var RoboArmApp = function (_React$Component5) {
             React.createElement(
               Topology,
               {
-                a11yTitle: this.props.roboarmConfig.description,
+                a11yTitle: this.state.roboarmConfig.description,
                 links: this.state.command_links
               },
               React.createElement(
@@ -518,8 +432,8 @@ var RoboArmApp = function (_React$Component5) {
                   Topology.Part,
                   { direction: "column" },
                   React.createElement(RoboArmComponents, {
-                    componentConfig: this.props.roboarmConfig.components,
-                    roboArmName: this.props.roboarmConfig.description,
+                    componentConfig: this.state.roboarmConfig.components,
+                    roboArmName: this.state.roboarmConfig.description,
                     onClickItem: this.command_click
                   })
                 )
@@ -535,4 +449,4 @@ var RoboArmApp = function (_React$Component5) {
 }(React.Component);
 
 var element = document.getElementById("content");
-ReactDOM.render(React.createElement(RoboArmApp, { roboarmConfig: ROBOARM }), element);
+ReactDOM.render(React.createElement(RoboArmApp, null), element);

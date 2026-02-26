@@ -3,15 +3,86 @@
 
 # OWI-535 Robotic Arm - Advanced Web Interface and Controller / Python + Bottle
 
-# imports
-from bottle import Bottle, run, template, request, static_file
-import usb.core, usb.util
+import io
+import os
+import threading
+import time
+from bottle import Bottle, run, static_file, response, abort
+import usb.core
+import usb.util
 
-def motormsk (motor_id, motor_config):
+
+# ---------------------------------------------------------------------------
+# Camera setup
+# Try picamera2 (Raspbian Bullseye+) then fall back to picamera (older).
+# If neither is available the /stream endpoint returns 503.
+# ---------------------------------------------------------------------------
+
+try:
+  from picamera2 import Picamera2
+  _USE_PICAMERA2 = True
+except ImportError:
+  _USE_PICAMERA2 = False
+
+if not _USE_PICAMERA2:
+  try:
+    import picamera
+    _HAVE_PICAMERA = True
+  except ImportError:
+    _HAVE_PICAMERA = False
+    print("WARN: No camera library found. /stream endpoint will be unavailable.")
+else:
+  _HAVE_PICAMERA = False
+
+_camera_available = _USE_PICAMERA2 or _HAVE_PICAMERA
+
+_frame_lock = threading.Lock()
+_frame = None
+
+
+def _capture_frames():
+  global _frame
+  try:
+    if _USE_PICAMERA2:
+      camera = Picamera2()
+      camera.configure(camera.create_video_configuration(main={"size": (640, 480)}))
+      camera.start()
+      try:
+        while True:
+          buf = io.BytesIO()
+          camera.capture_file(buf, format='jpeg')
+          with _frame_lock:
+            _frame = buf.getvalue()
+          time.sleep(0.05)
+      finally:
+        camera.stop()
+    else:
+      with picamera.PiCamera(resolution=(640, 480), framerate=20) as camera:
+        stream = io.BytesIO()
+        for _ in camera.capture_continuous(stream, format='jpeg', use_video_port=True):
+          with _frame_lock:
+            _frame = stream.getvalue()
+          stream.seek(0)
+          stream.truncate()
+  except Exception as e:
+    print(f"ERROR: camera capture thread failed: {e}")
+
+
+if _camera_available:
+  _capture_thread = threading.Thread(target=_capture_frames, daemon=True)
+  _capture_thread.start()
+
+
+# ---------------------------------------------------------------------------
+# Motor bitmask helpers
+# ---------------------------------------------------------------------------
+
+def motormsk(motor_id, motor_config):
   return (motor_config[motor_id][0][0] | motor_config[motor_id][1][0], motor_config[motor_id][0][1] | motor_config[motor_id][1][1], motor_config[motor_id][0][2] | motor_config[motor_id][1][2])
-  
-def motorcmb (motor_id_1, motor_dir_1, motor_id_2, motor_dir_2, motor_config):
+
+def motorcmb(motor_id_1, motor_dir_1, motor_id_2, motor_dir_2, motor_config):
   return (motor_config[motor_id_1][motor_dir_1][0] | motor_config[motor_id_2][motor_dir_2][0], motor_config[motor_id_1][motor_dir_1][1] | motor_config[motor_id_2][motor_dir_2][1], motor_config[motor_id_1][motor_dir_1][2] | motor_config[motor_id_2][motor_dir_2][2])
+
 
 # MOTORS: all, m1, m2, m3, m4, m5 (+, -)
 MOTORS = (
@@ -20,58 +91,58 @@ MOTORS = (
     (0b10101010, 0b00000010, 0b00000000)
   ),
   (
-    (2**0, 0, 0),
-    (2**1, 0, 0)
+    (0b00000001, 0, 0),
+    (0b00000010, 0, 0)
   ),
   (
-    (2**2, 0, 0),
-    (2**3, 0, 0)
+    (0b00000100, 0, 0),
+    (0b00001000, 0, 0)
   ),
   (
-    (2**4, 0, 0),
-    (2**5, 0, 0)
+    (0b00010000, 0, 0),
+    (0b00100000, 0, 0)
   ),
   (
-    (2**7, 0, 0),
-    (2**6, 0, 0)
+    (0b10000000, 0, 0),
+    (0b01000000, 0, 0)
   ),
   (
-    (0, 2**0, 0),
-    (0, 2**1, 0)
+    (0, 0b00000001, 0),
+    (0, 0b00000010, 0)
   )
 )
 
-LED = ((0,0,1),(0,0,0))
+LED = ((0, 0, 1), (0, 0, 0))
 
-# TRACKS: both, right, left (forward, reverse) 
+# TRACKS: both, right, left (forward, reverse)
 TRACKS = (
-    (
-      motorcmb(4, 0, 5, 0, MOTORS),
-      motorcmb(4, 1, 5, 1, MOTORS)
-    ),
-    MOTORS[4],
-    MOTORS[5]
-  )
+  (
+    motorcmb(4, 0, 5, 0, MOTORS),
+    motorcmb(4, 1, 5, 1, MOTORS)
+  ),
+  MOTORS[4],
+  MOTORS[5]
+)
 
-# ARM: all, elbow, wrist, grip (forward/open, reverse/close)  
+# ARM: all, elbow, wrist, grip (forward/open, reverse/close)
 ARM = (
   (
-      motorcmb(0, 0, 1, 0,((motorcmb(1, 0, 2, 0, MOTORS),motorcmb(1, 1, 2, 1, MOTORS)),(MOTORS[3]))),
-      motorcmb(0, 1, 1, 1,((motorcmb(1, 0, 2, 0, MOTORS),motorcmb(1, 1, 2, 1, MOTORS)),(MOTORS[3])))
-    ),
-    MOTORS[3],
-    MOTORS[2],
-    MOTORS[1]
-  )
+    motorcmb(0, 0, 1, 0, ((motorcmb(1, 0, 2, 0, MOTORS), motorcmb(1, 1, 2, 1, MOTORS)), (MOTORS[3]))),
+    motorcmb(0, 1, 1, 1, ((motorcmb(1, 0, 2, 0, MOTORS), motorcmb(1, 1, 2, 1, MOTORS)), (MOTORS[3])))
+  ),
+  MOTORS[3],
+  MOTORS[2],
+  MOTORS[1]
+)
 
 OWI535USB = {
   "description": "OWI-535 Robotic Arm - USB Interface",
-  "identification":{
-    "description":"These are the parameters used to identify the RoboArm using the USB connection",
+  "identification": {
+    "description": "These are the parameters used to identify the RoboArm using the USB connection",
     "idVendor": 0x1267,
     "idProduct": 0x000
   },
-  "initialisation":{
+  "initialisation": {
     "description": "These variables are used to transfer data on the created USB connection",
     "bmRequestType": 0x40,
     "bmRequest": 6,
@@ -111,7 +182,7 @@ ROVER = {
           }
         },
         "elbow": {
-          "description":"",
+          "description": "",
           "mask": motormsk(1, ARM),
           "verbs": {
             "open": ARM[1][0],
@@ -120,7 +191,7 @@ ROVER = {
           }
         },
         "wrist": {
-          "description":"",
+          "description": "",
           "mask": motormsk(2, ARM),
           "verbs": {
             "open": ARM[2][0],
@@ -129,22 +200,22 @@ ROVER = {
           }
         },
         "grip": {
-          "description":"",
+          "description": "",
           "mask": motormsk(3, ARM),
           "verbs": {
             "open": ARM[3][1],
             "close": ARM[3][0],
             "stop": motormsk(3, ARM)
           }
-        },
+        }
       }
     },
     "light": {
-      "description":"This is an LED mounted behind the <GRIP> feature on the <ARM> component - the focus of the light is useful to highlight where to grab, or that the system is in use",
+      "description": "This is an LED mounted behind the <GRIP> feature on the <ARM> component - the focus of the light is useful to highlight where to grab, or that the system is in use",
       "mask": LED[0],
       "features": {
         "switch": {
-          "description":"The only feature of the <LIGHT> is the <SWITCH>, simply flipping the last bit of the 3rd byte",
+          "description": "The only feature of the <LIGHT> is the <SWITCH>, simply flipping the last bit of the 3rd byte",
           "mask": LED[0],
           "verbs": {
             "on": LED[0],
@@ -156,14 +227,16 @@ ROVER = {
   }
 }
 
-# initialise the global vars
+# Global motor state - mutated in place by each command request.
+# Protected by _move_command_lock since waitress serves requests on multiple threads.
+_move_command_lock = threading.Lock()
 move_command = [0, 0, 0]
 
+
 def change_move_command(update_move_command, roboarm_components_system, component, feature, verb):
-  
   # check that the input is valid against the roboarm_components_system inputs
   input_exists = check_inputs(roboarm_components_system, component, feature, verb)
-  
+
   if input_exists[0]:
     # when receiving all valid inputs we should be cancelling out the current movement using the mask for the associated level (e.g. feature mask)
     # this is achieved through the the logical AND(&) with the logical NOT(~) of the mask
@@ -174,87 +247,115 @@ def change_move_command(update_move_command, roboarm_components_system, componen
     update_move_command[0] = (update_move_command[0] | roboarm_components_system[component]["features"][feature]["verbs"][verb][0])
     update_move_command[1] = (update_move_command[1] | roboarm_components_system[component]["features"][feature]["verbs"][verb][1])
     update_move_command[2] = (update_move_command[2] | roboarm_components_system[component]["features"][feature]["verbs"][verb][2])
-  
-  # calling the function just returns the updated dict {} and doesn't affect any data outside of the function, or use any data that is not passed in
+
   return update_move_command, input_exists
-  
+
+
 def check_inputs(roboarm_components_system, component, feature, verb):
-  # print(component in roboarm_components_system.keys())
-  component_exists = component in roboarm_components_system.keys()
-  # print(feature in roboarm_components_system[component]["features"].keys())
-  feature_exists = feature in roboarm_components_system[component]["features"].keys()
-  # print(verb in roboarm_components_system[component]["features"][feature]["verbs"].keys())
-  verb_exists = verb in roboarm_components_system[component]["features"][feature]["verbs"].keys()
-  
-  # return the complete list of the 
-  return (component_exists & feature_exists & verb_exists), component_exists, feature_exists, verb_exists
+  component_exists = component in roboarm_components_system
+  feature_exists = component_exists and feature in roboarm_components_system[component]["features"]
+  verb_exists = feature_exists and verb in roboarm_components_system[component]["features"][feature]["verbs"]
+  return (component_exists and feature_exists and verb_exists), component_exists, feature_exists, verb_exists
+
 
 def initialise_robocontroller(vendor_id=OWI535USB["identification"]["idVendor"], product_id=OWI535USB["identification"]["idProduct"]):
-
   try:
     robocontroller = usb.core.find(idVendor=vendor_id, idProduct=product_id)
-    print("INFO: initialised device: vendor_id={}, product_id={}".format(vendor_id, product_id))
-    print("INFO: device: robocontroller={}".format(robocontroller))
+    print(f"INFO: initialised device: vendor_id={vendor_id}, product_id={product_id}")
+    print(f"INFO: device: robocontroller={robocontroller}")
     return robocontroller
   except Exception as e:
-    print("ERROR: unable to find device: vendor_id={}, product_id={}".format(vendor_id, product_id))
-    print("ERROR: exception={}".format(e))
+    print(f"ERROR: unable to find device: vendor_id={vendor_id}, product_id={product_id}")
+    print(f"ERROR: exception={e}")
     return None
 
 
-initial_robocontroller_device = initialise_robocontroller()
-  
-def transfer_robocontroller(move_command, ctrl_roboarm=OWI535USB["initialisation"], timeout=1000, robocontroller_device=initial_robocontroller_device):
+_robocontroller = initialise_robocontroller()
+
+
+def transfer_robocontroller(move_command, ctrl_roboarm=OWI535USB["initialisation"], timeout=1000):
+  global _robocontroller
   transfer_stats = None
 
-  if robocontroller_device is None:
-      # attempt to initialise the device 
+  if _robocontroller is None:
     print("WARN: Reinitialising robocontroller")
-    robocontroller_device = initialise_robocontroller()
-  else:
-  
-  # perform the actual USB transfer, returning the length of the transfer
-    try: 
-      transfer_stats = robocontroller_device.ctrl_transfer(ctrl_roboarm["bmRequestType"], ctrl_roboarm["bmRequest"], ctrl_roboarm["wValue"], ctrl_roboarm["wIndex"], move_command, timeout)
+    _robocontroller = initialise_robocontroller()
+
+  if _robocontroller is not None:
+    try:
+      transfer_stats = _robocontroller.ctrl_transfer(ctrl_roboarm["bmRequestType"], ctrl_roboarm["bmRequest"], ctrl_roboarm["wValue"], ctrl_roboarm["wIndex"], move_command, timeout)
     except Exception as e:
-      print("ERROR: unable to update device with ctrl: move_command={}".format(move_command))
-      print("ERROR: exception={}".format(e))
-      
+      print(f"ERROR: unable to update device with ctrl: move_command={move_command}")
+      print(f"ERROR: exception={e}")
+
   return transfer_stats
+
+
+# ---------------------------------------------------------------------------
+# HTTP routes
+# ---------------------------------------------------------------------------
 
 app = Bottle()
 
-@app.route('/roboarm/<component>/<feature>/<verb>')
-def move_roboarm(component, feature, verb, move_command=move_command):
-  
-  # print out the input parameters
-  print("request: component={}, feature={}, verb={}".format(component, feature, verb))
-  
-  # print out the current move command
-  print("current move_command:{}".format(move_command))
-  
-  # update the move_command dictionary
-  move_command = change_move_command(move_command, ROVER["components"], component, feature, verb)[0]
-  
-  # print out the updated move command
-  print("new move_command:{}".format(move_command))
-  
-  # make the transfer
-  transfer_attempt = transfer_robocontroller(move_command)
-  
-  # print out the result
-  print("transfer_attempt:{}".format(transfer_attempt))
+_INTERFACE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'interface')
 
-  # return the current move command
-  return move_command[0]
-  
+
+def build_config():
+  config = {"description": "Giraffe Rover", "components": {}}
+  for comp_name, comp in ROVER["components"].items():
+    features = {}
+    for feat_name, feat in comp["features"].items():
+      features[feat_name] = {
+        "description": feat.get("description", ""),
+        "actions": {verb: list(cmd) for verb, cmd in feat["verbs"].items()}
+      }
+    config["components"][comp_name] = {
+      "description": comp.get("description", ""),
+      "features": features
+    }
+  return config
+
+
+@app.route('/config')
+def get_config():
+  return build_config()
+
+
+@app.route('/stream')
+def camera_stream():
+  if not _camera_available:
+    abort(503, "Camera not available")
+  response.content_type = 'multipart/x-mixed-replace; boundary=frame'
+
+  def generate():
+    while True:
+      with _frame_lock:
+        frame = _frame
+      if frame is not None:
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+      time.sleep(0.05)
+
+  return generate()
+
+
+@app.route('/roboarm/<component>/<feature>/<verb>')
+def move_roboarm(component, feature, verb):
+  print(f"request: component={component}, feature={feature}, verb={verb}")
+  with _move_command_lock:
+    print(f"current move_command:{move_command}")
+    change_move_command(move_command, ROVER["components"], component, feature, verb)
+    print(f"new move_command:{move_command}")
+    transfer_attempt = transfer_robocontroller(move_command)
+    print(f"transfer_attempt:{transfer_attempt}")
+    return move_command[0]
+
+
 @app.route('/interface/<filepath:path>')
 def server_static(filepath):
-    return static_file(filepath, root='/home/pi/rover/roboarm/interface')
-
-run(app, host='0.0.0.0', port=8888)
+  return static_file(filepath, root=_INTERFACE_ROOT)
 
 
-
-
-
+# Use waitress for multi-threaded serving — required so the long-lived /stream
+# connection does not block motor command requests on /roboarm.
+run(app, host='0.0.0.0', port=8888, server='waitress')
