@@ -1,6 +1,6 @@
 # Giraffe Rover — Build Log
 
-A build log for the Giraffe Rover: a Raspberry Pi Zero W controlled tracked robot with an OWI-535 robotic arm, LED spotlight, and live camera feed operated from a browser.
+A Raspberry Pi Zero W controlled rover built on a modified **New Bright Power Horse** tracked toy chassis, with an **OWI-535 robotic arm** mounted on top, controlled via a browser-based web interface with live camera feed.
 
 ---
 
@@ -8,177 +8,201 @@ A build log for the Giraffe Rover: a Raspberry Pi Zero W controlled tracked robo
 
 | Part | Notes |
 |------|-------|
+| New Bright Power Horse tracked toy | Donor platform — chassis, tracks, two DC drive motors |
+| OWI-535 Robotic Arm Edge (USB version) | 5-motor arm: elbow, wrist, grip + base rotation + LED |
 | Raspberry Pi Zero W | Main controller — runs Python/Bottle server on port 8888 |
-| RPi Camera Module | Any RPi-compatible camera; used for MJPEG live feed |
-| OWI-535 Robotic Arm Edge (USB version) | 5-motor arm: base rotation, elbow, wrist, grip + LED |
-| Tracked base chassis | Houses the drive gearbox and dual track motors |
-| USB cable | Connects OWI-535 to the Pi |
-| Power supply | Powers both Pi and arm via USB |
-| LED spotlight | Mounted behind gripper on the OWI-535 arm |
+| RPi Camera Module | Live MJPEG feed embedded in web interface |
+| USB hub | Connects OWI-535 and camera to the Pi's single USB port |
+| LiPo / USB power bank | Powers Pi and arm |
+| Jumper wire, heatshrink | Motor rewiring for independent left/right track control |
 
 ---
 
-## Stage 1 — Track Drive System
+## Stage 1 — Donor Vehicle
 
-The tracked base provides the mobility platform. Two independent motors drive the left and right tracks, allowing forward, reverse, and differential steering (clockwise/counterclockwise turns by running tracks in opposite directions).
+The build starts with a **New Bright Power Horse** RC toy excavator. It provides the tracked base, two DC drive motors, and the chassis shell — all of which are repurposed for the rover.
 
-### 1.1 Drive Gearbox
+![New Bright Power Horse — the donor vehicle](images/02-donor-vehicle.jpg)
 
-The gearbox sits at the rear of the chassis, beneath the Raspberry Pi mount. It steps down motor speed to usable torque for the tracks.
-
-<!-- Upload image: rear gearbox assembly, track drive motor visible -->
-![Track drive gearbox — rear view](images/01-track-gearbox-rear.jpg)
-
-<!-- Upload image: gearbox detail / gear train -->
-![Gearbox detail](images/02-track-gearbox-detail.jpg)
-
-<!-- Upload image: gearbox mounted in chassis from above -->
-![Gearbox mounted in chassis](images/03-track-gearbox-mounted.jpg)
-
-### 1.2 Track Assembly
-
-<!-- Upload image: track and sprocket fitting -->
-![Track and sprocket assembly](images/04-track-sprocket.jpg)
-
-<!-- Upload image: completed track run, side profile -->
-![Track run — side profile](images/05-track-run-side.jpg)
-
-<!-- Upload image: both tracks fitted, chassis from front -->
-![Both tracks fitted](images/06-tracks-both-fitted.jpg)
+The original toy uses a single motor driving both tracks together via a shared gearbox, with steering done by mechanically braking one side. For the rover, the two track motors need to be independently controllable so the RPi can drive them separately via bitmask commands — this requires rewiring.
 
 ---
 
-## Stage 2 — Chassis and Mounting Points
+## Stage 2 — Track Drive System
 
-<!-- Upload image: bare chassis from above, showing RPi mounting point above gearbox -->
-![Chassis top view — RPi mounting point](images/07-chassis-top.jpg)
+### Gearbox
 
-<!-- Upload image: chassis from underneath -->
-![Chassis underside](images/08-chassis-underside.jpg)
+The gearbox sits at the rear of the chassis under where the Raspberry Pi is later mounted. The lid comes off to expose the plastic gear train — two spur gear stacks transferring motor torque to the drive sprockets on each side.
 
----
+![Track gearbox — internal gear train](images/03-gearbox-gear-train.jpg)
 
-## Stage 3 — Raspberry Pi Zero W
+### Drive motors
 
-The Pi Zero W is mounted directly above the rear gearbox. It runs the combined HTTP and USB control server (`giraffe-rover.py`) using `waitress` for multi-threaded request handling — essential so the long-lived MJPEG `/stream` connection does not block motor command requests.
+Each track is driven by a small DC motor. After rewiring, each motor gets its own pair of leads (colour-coded) going directly to the RPi's USB/GPIO control path, allowing independent forward/reverse on each side — the basis for differential steering.
 
-### 3.1 Pi Mounting
+![Track drive motors — independent wiring](images/05-track-motors-wiring.jpg)
 
-<!-- Upload image: Pi Zero W before mounting, showing GPIO pins / USB ports -->
-![Raspberry Pi Zero W — before mounting](images/09-rpi-premount.jpg)
+### Chassis — open top
 
-<!-- Upload image: Pi mounted on chassis above gearbox -->
-![Pi mounted above rear gearbox](images/10-rpi-mounted.jpg)
+With the cover removed you can see the internal motor mounting bays and the wire routing. The chassis shell provides natural channels to run cables up to the top deck where the electronics sit.
 
-### 3.2 Camera Module
+![Chassis open — motor bays and cable routing](images/04-chassis-open-top.jpg)
 
-The camera provides a live MJPEG feed embedded in the web interface. The server auto-detects `picamera2` (Bullseye+) or falls back to `picamera` (older Raspbian) at startup.
+### Turntable mount
 
-<!-- Upload image: camera module fitted -->
-![Camera module fitted](images/11-camera-fitted.jpg)
+The top of the chassis has a large circular turntable ring — the arm's base rotation bearing mounts here, allowing the OWI-535 arm to pan left and right independently of the tracks.
 
-<!-- Upload image: camera field of view / angle -->
-![Camera angle / field of view](images/12-camera-fov.jpg)
+![Chassis top — turntable ring for arm base](images/12-chassis-turntable-top.jpg)
 
 ---
 
-## Stage 4 — OWI-535 Robotic Arm
+## Stage 3 — First Build Iteration
 
-The OWI-535 Robotic Arm Edge (USB interface version) provides five controlled axes plus an LED:
+An early prototype was assembled over Christmas to validate the concept — arm on chassis, green RPi enclosure, WiFi antenna for wireless control.
 
-| Motor | Joint | Direction labels |
-|-------|-------|-----------------|
-| M1 | Grip | open / close |
-| M2 | Wrist | open / close |
-| M3 | Elbow | open / close |
-| M4 | Right track | forward / reverse |
-| M5 | Left track | forward / reverse |
-| LED | Spotlight | on / off |
+### Workspace
 
-All motors are controlled by a single 3-byte USB `ctrl_transfer`. Bits within bytes 0–2 map directly to motor channels, so multiple motors can run simultaneously with a single USB write.
+![Build workspace — components laid out](images/07-workspace-overview.jpg)
 
-### 4.1 Arm Assembly
+### Arm on chassis — early version
 
-<!-- Upload image: OWI-535 unboxed / kit parts -->
-![OWI-535 kit parts](images/13-owi535-kit.jpg)
+The OWI-535 arm is fitted to the tracked base. At this point the electronics are loosely placed — the focus is proving that the arm, tracks, and RPi can all talk to each other before finalising the packaging.
 
-<!-- Upload image: elbow / wrist subassembly -->
-![Elbow and wrist subassembly](images/14-owi535-elbow-wrist.jpg)
+![Early build — arm mounted on chassis](images/06-early-build-arm-on-chassis.jpg)
 
-<!-- Upload image: gripper assembly with LED mount -->
-![Gripper and LED mount](images/15-owi535-gripper-led.jpg)
+### RPi enclosure (prototype)
 
-<!-- Upload image: arm fully assembled, pre-mounting -->
-![Arm fully assembled](images/16-owi535-assembled.jpg)
+A green enclosure houses the Raspberry Pi with a WiFi antenna for reach. The size of the enclosure makes it bulky on the chassis — this is refined in the final version.
 
-### 4.2 Arm Mounted on Chassis
+![Prototype RPi enclosure fitted to chassis](images/08-rpi-enclosure-prototype.jpg)
 
-<!-- Upload image: arm mounted on tracked base, side view -->
-![Arm mounted on chassis — side](images/17-arm-on-chassis-side.jpg)
+### Testing on carpet
 
-<!-- Upload image: arm mounted, front 3/4 view -->
-![Arm mounted — front 3/4 view](images/18-arm-on-chassis-front.jpg)
+First drive test with the prototype enclosure. The blue LEDs on the RPi power bank and the Pi itself confirm the system is live and connected.
+
+![Prototype rover — first test on carpet](images/09-prototype-testing-carpet.jpg)
 
 ---
 
-## Stage 5 — Wiring and Electronics
+## Stage 4 — Arm Integration (Final Version)
 
-<!-- Upload image: USB connection from OWI-535 to Pi -->
-![USB connection OWI-535 → Pi](images/19-usb-connection.jpg)
+With the concept validated, the build is refined. The arm base rotation motor is properly mounted to the turntable, and wiring is tidied up.
 
-<!-- Upload image: wiring overview / cable routing -->
-![Wiring overview](images/20-wiring-overview.jpg)
+### Arm base motor fitting
 
-<!-- Upload image: power supply / battery arrangement -->
-![Power supply](images/21-power-supply.jpg)
+The OWI-535 base rotation motor mounts to the turntable ring on the chassis deck. This motor is driven by the same USB control protocol as the rest of the arm — byte 0 bits control all five arm motors including base rotation.
+
+![Arm base motor being fitted to turntable](images/13-arm-base-motor-fitting.jpg)
+
+![Arm base motor — side view during fitting](images/14-arm-fitting-side.jpg)
+
+![Arm base motor — chassis top view](images/11-arm-base-motor-chassis.jpg)
+
+### Arm mounted on chassis
+
+With the base motor in place the full OWI-535 arm is attached. The arm can now pan, extend, and grip independently of track movement — all controlled by single 3-byte USB writes.
+
+![OWI-535 arm fully mounted on tracked chassis](images/15-arm-mounted-on-chassis.jpg)
+
+### Cable routing through base joint
+
+The arm's motor cables need to pass through the base rotation joint cleanly so they don't snag during pan movements.
+
+![Cable routing through arm base rotation joint](images/16-arm-base-cable-routing.jpg)
 
 ---
 
-## Stage 6 — Completed Build
+## Stage 5 — Electronics and Wiring
 
-<!-- Upload image: completed rover from front -->
-![Completed rover — front view](images/22-completed-front.jpg)
+### Raspberry Pi Zero W
 
-<!-- Upload image: completed rover from rear, showing Pi above gearbox -->
-![Completed rover — rear view](images/23-completed-rear.jpg)
+The Pi Zero W sits in the chassis bay above the rear gearbox — the green PCB visible with USB cables (white) going to the USB hub and down to the power bank, and the OWI-535 USB lead. The gearbox gear train is visible immediately below.
 
-<!-- Upload image: rover in operation / interface screenshot -->
-![Rover in operation](images/24-in-operation.jpg)
+![RPi Zero W mounted in chassis bay — gearbox below](images/22-rpi-in-chassis-bay.jpg)
+
+### Camera and RPi — top view
+
+Without the arm fitted, the top deck shows the RPi Zero W and camera module mounted cleanly. The camera feeds a 640×480 MJPEG stream via `/stream` on the Bottle server.
+
+![RPi and camera module mounted on chassis top](images/18-rpi-camera-mounted.jpg)
+
+### USB connections — rear
+
+The USB cable from the OWI-535 arm exits at the rear of the chassis. The red/black power leads for the track motors are also visible here.
+
+![Rear USB connection point](images/23-rear-usb-connection.jpg)
+
+### Electronics close-up
+
+The assembled electronics stack: USB hub, battery connections, motor leads, and control wiring all routing from the chassis interior up to the Pi.
+
+![Electronics detail — USB hub and wiring](images/10-electronics-detail.jpg)
+
+---
+
+## Stage 6 — Assembly and Testing
+
+### Rover assembled
+
+The finished rover with arm, chassis, blue LiPo battery pack (Velcro-mounted on top), and all wiring connected. A tethered USB cable provides power/data during bench testing before going wireless.
+
+![Rover assembled — battery and arm fitted](images/17-rover-assembled.jpg)
+
+![Rover on desk — final assembly](images/21-rover-final-desk.jpg)
+
+### First power-on
+
+First live test of the complete system on carpet. Blue LEDs on the RPi and power bank confirm the Pi has booted; the camera LED indicates the stream is active. The white USB cable tethers it to a laptop for the initial software bring-up.
+
+![First power-on — RPi and camera LEDs lit](images/19-first-power-on.jpg)
+
+---
+
+## Videos
+
+Three video clips document the rover in motion:
+
+| File | Description |
+|------|-------------|
+| [01-overview.mp4](images/01-overview.mp4) | Overview of the rover |
+| [20-rover-driving.mp4](images/20-rover-driving.mp4) | Rover driving under web interface control |
+| [24-final-demo.mp4](images/24-final-demo.mp4) | Final demo — tracks, arm, and camera all operating |
 
 ---
 
 ## Build Notes
 
-### USB Initialisation
+### Track motor rewiring
 
-The OWI-535 uses vendor ID `0x1267`, product ID `0x0000`. The Pi must run the server with `sudo` to access the USB device without a udev rule:
+The original New Bright toy drives both tracks from a single motor channel. To get independent left/right control the two motors must be rewired with separate leads. In the software these map to MOTORS[4] (right, byte 0 bits 6–7) and MOTORS[5] (left, byte 1 bits 0–1).
 
-```bash
-sudo python3 giraffe-rover.py
-```
+### USB initialisation
 
-On first connection the arm occasionally needs a brief power cycle if the USB device is not found at startup — the server will log `WARN: Reinitialising robocontroller` and retry automatically on the next command request.
+The OWI-535 uses vendor ID `0x1267`, product ID `0x0000`. Running the server with `sudo` is required for raw USB access without a udev rule. If the arm isn't found at startup the server logs `WARN: Reinitialising robocontroller` and retries on the next command.
 
-### Simultaneous Motor Control
+### Simultaneous motor control
 
-The key design decision is bitmask-based command composition. Each motor has two bits in the 3-byte command array (one per direction). Sending a command zeroes only that motor's bits then ORs in the new direction — all other motors' bits are untouched. This means the arm can move while the rover is driving without any sequencing logic.
+All five arm motors plus both track motors are packed into a single 3-byte command word. Each `GET /roboarm/component/feature/verb` request ANDs out the relevant bits and ORs in the new value — other motors are unaffected. This is what allows the arm to move while the rover is driving.
 
-### Camera Streaming
+### Camera streaming
 
-The MJPEG stream at `/stream` is a `multipart/x-mixed-replace` response — the browser treats it as a standard `<img>` tag and repaints on each incoming JPEG frame. `waitress` handles this on a separate thread so stream connections don't block motor commands.
+`/stream` is a `multipart/x-mixed-replace` MJPEG response. The frontend embeds it as a plain `<img>` tag. The `waitress` WSGI server handles this on a dedicated thread so the long-lived stream connection never blocks motor command requests.
 
 ---
 
 ## Software Setup
 
-See the main [README](../README.md) for full software prerequisites and running instructions.
+See the main [README](../README.md) for full prerequisites and running instructions.
 
 ```bash
-# On the Pi:
+# On the Pi
 sudo pip3 install -r requirements.txt
-sudo apt install python3-picamera2   # Bullseye+
+sudo apt install python3-picamera2   # Raspbian Bullseye+
 sudo python3 giraffe-rover.py
+```
 
-# Then open in browser:
+Then open in a browser:
+
+```
 http://giraffe.local:8888/interface/index.html
 ```

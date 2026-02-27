@@ -4,6 +4,11 @@ Software and build instructions for a Raspberry Pi powered rover, featuring a sp
 
 **[Build Log with photos →](docs/build-log.md)**
 
+| | |
+|---|---|
+| ![Donor vehicle — New Bright Power Horse](docs/images/02-donor-vehicle.jpg) | ![OWI-535 arm mounted on tracked chassis](docs/images/15-arm-mounted-on-chassis.jpg) |
+| ![RPi Zero W in chassis bay](docs/images/22-rpi-in-chassis-bay.jpg) | ![First power-on](docs/images/19-first-power-on.jpg) |
+
 ---
 
 ## What It Does
@@ -23,10 +28,11 @@ The key improvement over simpler implementations is that multiple motors can run
 
 | Component | Details |
 |-----------|---------|
+| Tracked base | New Bright Power Horse toy chassis — rewired for independent left/right motor control |
 | Raspberry Pi | Zero W (or similar), running Raspbian |
 | Camera module | Any RPi-compatible camera |
 | Robotic arm | OWI-535 Robotic Arm Edge (USB interface version) |
-| USB connection | OWI-535 plugged into the Pi via USB |
+| USB hub | Required — Pi Zero W has a single USB port shared between OWI-535 and camera |
 
 ---
 
