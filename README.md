@@ -2,6 +2,8 @@
 
 Software and build instructions for a Raspberry Pi powered rover, featuring a spotlight, robotic arm and tracked base — controlled via a web interface with live video feedback.
 
+**[Build Log with photos →](docs/build-log.md)**
+
 ---
 
 ## What It Does
@@ -256,6 +258,25 @@ The `package.json` uses `@babel/cli` with `@babel/preset-react` (JSX) and `@babe
 
 ---
 
+## Build Log
+
+Full step-by-step build log with photos covering the track drive system, chassis, Raspberry Pi mounting, OWI-535 arm assembly, wiring, and completed rover:
+
+**[docs/build-log.md](docs/build-log.md)**
+
+### Key build stages
+
+| Stage | What |
+|-------|------|
+| 1 | Track drive system — gearbox, sprockets, track run |
+| 2 | Chassis and mounting points |
+| 3 | Raspberry Pi Zero W + camera module |
+| 4 | OWI-535 arm assembly and mounting |
+| 5 | Wiring and electronics |
+| 6 | Completed build |
+
+---
+
 ## Project Structure
 
 ```
@@ -264,6 +285,9 @@ giraffe-rover/
 ├── requirements.txt          # Python dependencies
 ├── package.json              # Frontend build tooling (Babel)
 ├── .gitignore
+├── docs/
+│   ├── build-log.md          # Step-by-step build log with photos
+│   └── images/               # Build photos (24 images)
 └── interface/
     ├── index.html            # Frontend entry point (loads CDN deps + index.js)
     ├── css/
